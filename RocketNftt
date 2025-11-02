@@ -1,0 +1,109 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Events = ReplicatedStorage:WaitForChild("Events")
+local LocalPlayer = Players.LocalPlayer
+local _Inventory = LocalPlayer:WaitForChild("_Inventory")
+local module = require(ReplicatedStorage:WaitForChild("Info"))
+
+local AutoRocket = {}
+
+function AutoRocket.GetMostExpensiveGift()
+    local mostExpensive = nil
+    local highestPrice = 0
+    
+    for _, gift in pairs(module.Gifts) do
+        if gift.Price > highestPrice and not gift.Limited and gift.Price > 100 then
+            highestPrice = gift.Price
+            mostExpensive = gift
+        end
+    end
+    
+    return mostExpensive
+end
+
+function AutoRocket.FindGiftInstance(giftName)
+    for _, item in ipairs(_Inventory:GetChildren()) do
+        if item.Name == giftName then
+            return item
+        end
+    end
+    return nil
+end
+
+function AutoRocket.PlayRocket()
+    local giftData = AutoRocket.GetMostExpensiveGift()
+    if not giftData then
+        warn("Не найден подходящий подарок для ракетки")
+        return false
+    end
+    
+    local giftInstance = AutoRocket.FindGiftInstance(giftData.Name)
+    if not giftInstance then
+        warn("Подарок " .. giftData.Name .. " не найден в инвентаре")
+        return false
+    end
+    
+    -- Запускаем ракетку
+    local success, result = Events.Rocket:InvokeServer(giftInstance, "Play")
+    
+    if success then
+        print("🎯 Ракетка запущена с подарком: " .. giftData.Name .. " (Цена: ⭐ " .. giftData.Price .. ")")
+        
+        -- Ждем пока мультипликатор достигнет 1.08x
+        local startTime = tick()
+        local maxWaitTime = 30 -- Максимальное время ожидания в секундах
+        
+        while tick() - startTime < maxWaitTime do
+            wait(0.1)
+            
+            -- Проверяем текущий мультипликатор (это нужно будет адаптировать под ваш UI)
+            -- В оригинальном коде мультипликатор отображается в Multiplier.Text
+            local multiplierText = script.Parent:FindFirstChild("Multiplier")
+            if multiplierText then
+                local multiplierValue = tonumber(string.match(multiplierText.Text, "x([%d%.]+)"))
+                if multiplierValue and multiplierValue >= 1.08 then
+                    -- Забираем выигрыш
+                    local claimSuccess, claimResult = Events.Rocket:InvokeServer(giftInstance, "Claim")
+                    if claimSuccess then
+                        print("✅ Выигрыш забран на " .. multiplierValue .. "x")
+                        return true
+                    else
+                        warn("❌ Ошибка при получении выигрыша: " .. tostring(claimResult))
+                        return false
+                    end
+                end
+            end
+        end
+        
+        warn("⏰ Время ожидания истекло, мультипликатор не достиг 1.08x")
+        return false
+    else
+        warn("❌ Ошибка при запуске ракетки: " .. tostring(result))
+        return false
+    end
+end
+
+function AutoRocket.StartAutoFarm(interval)
+    interval = interval or 5 -- Интервал между запусками в секундах
+    
+    print("🤖 Авто-ферма ракетки запущена!")
+    print("📊 Интервал: " .. interval .. " секунд")
+    print("🎯 Целевой мультипликатор: 1.08x")
+    
+    while true do
+        local success = AutoRocket.PlayRocket()
+        
+        if success then
+            print("🔄 Ожидание " .. interval .. " секунд до следующего запуска...")
+        else
+            print("🔄 Повторная попытка через " .. interval .. " секунд...")
+        end
+        
+        wait(interval)
+    end
+end
+
+-- Запуск авто-фермы (можно вызвать вручную)
+-- AutoRocket.StartAutoFarm(5)
+
+return AutoRocket
