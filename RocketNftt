@@ -1,248 +1,87 @@
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+-- Remote packet size(~): 20 bytes
 
-local Window = Rayfield:CreateWindow({
-   Name = "Авто Ракетка",
-   LoadingTitle = "Авто Ракетка",
-   LoadingSubtitle = "by Sirius",
-   Theme = "Default",
-   ToggleUIKeybind = "K",
-})
-
-local Tab = Window:CreateTab("Ракетка", "rocket") 
-local Tab1 = Window:CreateTab("Инфо", "info")
-
-local Label = Tab1:CreateLabel("Автоматически играет в ракетку")
-local Label = Tab1:CreateLabel("Использует самый дорогой подарок")
-local Label = Tab1:CreateLabel("Забирает на 1.08x")
-local Label = Tab1:CreateLabel("Работает в фоне")
-
--- Основные переменные
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Events = ReplicatedStorage:WaitForChild("Events")
-local RocketEvent = Events:WaitForChild("Rocket")
 local Players = game:GetService("Players")
+
 local LocalPlayer = Players.LocalPlayer
-local _Inventory = LocalPlayer:WaitForChild("_Inventory")
-local _CurrentRocket = LocalPlayer:WaitForChild("_CurrentRocket")
 
-local autoRocketEnabled = false
-local currentTask = nil
-
--- Функция для получения самого дорогого подарка
-function getMostExpensiveGift()
-    local mostExpensive = nil
+-- Функция для поиска самого дорогого подарка в инвентаре
+local function findMostExpensiveGift()
+    local backpack = LocalPlayer.Backpack or LocalPlayer:FindFirstChild("Backpack")
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    
+    if not backpack and not playerGui then
+        warn("Не удалось найти инвентарь игрока")
+        return "Lol Pop (Gold Star)" -- значение по умолчанию
+    end
+    
+    local mostExpensiveGift = nil
     local highestPrice = 0
     
-    for _, item in pairs(_Inventory:GetChildren()) do
-        if item:IsA("Folder") or item:IsA("Configuration") then
-            local success, giftInfo = pcall(function()
-                return require(ReplicatedStorage:WaitForChild("Info")).Gifts[item.Name]
-            end)
-            
-            if success and giftInfo then
-                if giftInfo.Price > highestPrice and giftInfo.Price > 100 and not giftInfo.Limited then
-                    highestPrice = giftInfo.Price
-                    mostExpensive = item
-                end
-            end
-        end
-    end
-    
-    return mostExpensive
-end
-
--- Функция для мониторинга мультипликатора
-function monitorMultiplier()
-    local multiplierText = script.Parent:WaitForChild("Multiplier", 10)
-    if not multiplierText then
-        return 1.00
-    end
-    
-    local text = multiplierText.Text
-    local multiplier = tonumber(string.match(text, "x([%d%.]+)")) or 1.00
-    return multiplier
-end
-
--- Основная функция авто-ракетки
-function startAutoRocket()
-    if currentTask then
-        currentTask:Disconnect()
-        currentTask = nil
-    end
-    
-    currentTask = game:GetService("RunService").Heartbeat:Connect(function()
-        if not autoRocketEnabled then return end
-        
-        -- Получаем самый дорогой подарок
-        local bestGift = getMostExpensiveGift()
-        if not bestGift then
-            Rayfield:Notify({
-               Title = "Ошибка",
-               Content = "Не найден подходящий подарок для игры",
-               Duration = 3,
-               Image = "x",
-            })
-            autoRocketEnabled = false
-            return
-        end
-        
-        -- Проверяем текущий мультипликатор
-        local currentMultiplier = monitorMultiplier()
-        
-        -- Если мультипликатор достиг 1.08x или выше - забираем выигрыш
-        if currentMultiplier >= 1.08 then
-            local success, result = pcall(function()
-                return RocketEvent:InvokeServer(bestGift, "Claim")
-            end)
-            
-            if success then
-                print("Забрали выигрыш на множителе:", currentMultiplier)
-                wait(2) -- Ждем завершения анимации
-            end
-        else
-            -- Если еще не достигли нужного множителя - продолжаем играть
-            local isPlaying = _CurrentRocket.Value ~= nil and _CurrentRocket.Value ~= ""
-            
-            if not isPlaying then
-                local success, result = pcall(function()
-                    return RocketEvent:InvokeServer(bestGift, "Play")
-                end)
+    -- Поиск в Backpack
+    if backpack then
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item:IsA("Tool") or item:IsA("HopperBin") then
+                -- Проверяем различные возможные свойства с ценой
+                local price = 0
                 
-                if success then
-                    print("Начали игру с подарком:", bestGift.Name)
-                    wait(1) -- Ждем начала игры
+                -- Пытаемся получить цену из разных свойств
+                if item:FindFirstChild("Price") then
+                    price = item.Price.Value or 0
+                elseif item:FindFirstChild("Cost") then
+                    price = item.Cost.Value or 0
+                elseif item:FindFirstChild("Value") and string.find(item.Value.Name:lower(), "price") then
+                    price = item.Value.Value or 0
+                end
+                
+                if price > highestPrice then
+                    highestPrice = price
+                    mostExpensiveGift = item.Name
                 end
             end
         end
-    end)
+    end
+    
+    -- Поиск в PlayerGui (для некоторых игр)
+    if playerGui then
+        local inventoryFrames = playerGui:FindFirstChild("Inventory") or playerGui:FindFirstChild("Backpack")
+        if inventoryFrames then
+            for _, frame in ipairs(inventoryFrames:GetDescendants()) do
+                if frame:IsA("TextButton") or frame:IsA("ImageButton") then
+                    local itemName = frame.Name
+                    if frame:FindFirstChild("Price") then
+                        local price = frame.Price.Text and tonumber(frame.Price.Text:gsub("%D", "")) or 0
+                        if price > highestPrice then
+                            highestPrice = price
+                            mostExpensiveGift = itemName
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return mostExpensiveGift or "Lol Pop (Gold Star)"
 end
 
--- Элементы GUI
-local Toggle = Tab:CreateToggle({
-    Name = "Авто Ракетка",
-    CurrentValue = false,
-    Flag = "AutoRocketToggle",
-    Callback = function(Value)
-        autoRocketEnabled = Value
-        if Value then
-            Rayfield:Notify({
-               Title = "Авто Ракетка запущена",
-               Content = "Используется самый дорогой подарок",
-               Duration = 3,
-               Image = "check",
-            })
-            startAutoRocket()
-        else
-            if currentTask then
-                currentTask:Disconnect()
-                currentTask = nil
-            end
-            Rayfield:Notify({
-               Title = "Авто Ракетка остановлена",
-               Content = "Автоматическая игра прекращена",
-               Duration = 3,
-               Image = "x",
-            })
-        end
-    end,
-})
+-- Получаем самый дорогой подарок
+local mostExpensiveGift = findMostExpensiveGift()
 
-local Button = Tab:CreateButton({
-   Name = "Найти самый дорогой подарок",
-   Callback = function()
-        local gift = getMostExpensiveGift()
-        if gift then
-            local giftInfo = require(ReplicatedStorage:WaitForChild("Info")).Gifts[gift.Name]
-            Rayfield:Notify({
-               Title = "Самый дорогой подарок",
-               Content = gift.Name .. " - ⭐ " .. tostring(giftInfo.Price),
-               Duration = 5,
-               Image = "check",
-            })
-        else
-            Rayfield:Notify({
-               Title = "Ошибка",
-               Content = "Не найден подходящий подарок",
-               Duration = 3,
-               Image = "x",
-            })
-        end
-   end,
-})
+local Rocket = ReplicatedStorage.Events.Rocket -- RemoteFunction 
 
-local Button = Tab:CreateButton({
-   Name = "Принудительно забрать выигрыш",
-   Callback = function()
-        local gift = getMostExpensiveGift()
-        if gift then
-            local success, result = pcall(function()
-                return RocketEvent:InvokeServer(gift, "Claim")
-            end)
-            
-            if success then
-                Rayfield:Notify({
-                   Title = "Успех",
-                   Content = "Выигрыш забран принудительно",
-                   Duration = 3,
-                   Image = "check",
-                })
-            else
-                Rayfield:Notify({
-                   Title = "Ошибка",
-                   Content = "Не удалось забрать выигрыш",
-                   Duration = 3,
-                   Image = "x",
-                })
-            end
-        end
-   end,
-})
+-- Используем самый дорогой поддарок
+Rocket:InvokeServer(
+    [mostExpensiveGift],
+    "Play"
+)
 
-local Slider = Tab:CreateSlider({
-   Name = "Множитель для автозабора",
-   Range = {1.00, 2.00},
-   Increment = 0.01,
-   Suffix = "x",
-   CurrentValue = 1.08,
-   Flag = "AutoClaimMultiplier",
-   Callback = function(Value)
-        -- Значение сохраняется в переменную, можно добавить логику
-        Rayfield:Notify({
-           Title = "Множитель изменен",
-           Content = "Автозабор на: " .. tostring(Value) .. "x",
-           Duration = 3,
-           Image = "check",
-        })
-   end,
-})
+-- Decompiler will be improved VERY SOON!
+-- Decompiled with Konstant V2.1, a fast Luau decompiler made in Luau by plusgiant5 (https://discord.gg/brNTY8nX8t)
+-- Decompiled on 2025-11-02 11:37:41
+-- Luau version 6, Types version 3
+-- Time taken: 0.000262 seconds
 
--- Информация о текущем статусе
-local StatusLabel = Tab:CreateLabel("Статус: Ожидание")
-local GiftLabel = Tab:CreateLabel("Текущий подарок: Не выбран")
-local MultiplierLabel = Tab:CreateLabel("Текущий множитель: 1.00x")
-
--- Обновление статуса
-game:GetService("RunService").Heartbeat:Connect(function()
-    if autoRocketEnabled then
-        StatusLabel:Set("Статус: Активно")
-    else
-        StatusLabel:Set("Статус: Ожидание")
-    end
-    
-    local gift = getMostExpensiveGift()
-    if gift then
-        GiftLabel:Set("Текущий подарок: " .. gift.Name)
-    else
-        GiftLabel:Set("Текущий подарок: Не найден")
-    end
-    
-    local multiplier = monitorMultiplier()
-    MultiplierLabel:Set("Текущий множитель: " .. string.format("%.2f", multiplier) .. "x")
-end)
-
-Rayfield:Notify({
-   Title = "Авто Ракетка загружена",
-   Content = "Используйте переключатель для запуска",
-   Duration = 5,
-   Image = "check",
-})
+local Parent = script.Parent
+Parent.Display.Text = LocalPlayer.DisplayName
+Parent.Username.Text = '@'..LocalPlayer.Name
+Parent.AvatarFrame.Image.Image = "https://www.roblox.com/headshot-thumbnail/image?userId="..LocalPlayer.UserId.."&width=150&height=150&format=png"
