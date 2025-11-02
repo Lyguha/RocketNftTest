@@ -1,87 +1,88 @@
--- Remote packet size(~): 20 bytes
-
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+-- Поиск самого дорогого подарка в инвентаре
 local Players = game:GetService("Players")
-
 local LocalPlayer = Players.LocalPlayer
 
--- Функция для поиска самого дорогого подарка в инвентаре
-local function findMostExpensiveGift()
-    local backpack = LocalPlayer.Backpack or LocalPlayer:FindFirstChild("Backpack")
-    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+-- Функция для получения цены предмета (адаптируйте под конкретную игру)
+local function getItemValue(itemName)
+    -- Здесь должна быть логика получения цены предмета
+    -- Это может быть через MarketplaceService, таблицу цен, или другие методы
     
-    if not backpack and not playerGui then
-        warn("Не удалось найти инвентарь игрока")
-        return "Lol Pop (Gold Star)" -- значение по умолчанию
+    -- Пример: если в игре есть модуль с ценами
+    local success, priceData = pcall(function()
+        return game:GetService("MarketplaceService"):GetProductInfo(itemName)
+    end)
+    
+    if success and priceData then
+        return priceData.PriceInRobux or 0
     end
     
-    local mostExpensiveGift = nil
+    -- Альтернативный метод: если цены хранятся в таблице
+    local priceTable = {
+        ["Lol Pop (Gold Star)"] = 1000,
+        ["Diamond Sword"] = 5000,
+        ["Golden Crown"] = 10000,
+        -- добавьте другие предметы и их цены
+    }
+    
+    return priceTable[itemName] or 0
+end
+
+-- Функция для поиска самого дорогого подарка
+local function findMostExpensiveGift()
+    local mostExpensiveItem = nil
     local highestPrice = 0
     
-    -- Поиск в Backpack
-    if backpack then
-        for _, item in ipairs(backpack:GetChildren()) do
-            if item:IsA("Tool") or item:IsA("HopperBin") then
-                -- Проверяем различные возможные свойства с ценой
-                local price = 0
-                
-                -- Пытаемся получить цену из разных свойств
-                if item:FindFirstChild("Price") then
-                    price = item.Price.Value or 0
-                elseif item:FindFirstChild("Cost") then
-                    price = item.Cost.Value or 0
-                elseif item:FindFirstChild("Value") and string.find(item.Value.Name:lower(), "price") then
-                    price = item.Value.Value or 0
-                end
-                
-                if price > highestPrice then
-                    highestPrice = price
-                    mostExpensiveGift = item.Name
-                end
-            end
-        end
-    end
+    -- Получаем инвентарь игрока
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
     
-    -- Поиск в PlayerGui (для некоторых игр)
-    if playerGui then
-        local inventoryFrames = playerGui:FindFirstChild("Inventory") or playerGui:FindFirstChild("Backpack")
-        if inventoryFrames then
-            for _, frame in ipairs(inventoryFrames:GetDescendants()) do
-                if frame:IsA("TextButton") or frame:IsA("ImageButton") then
-                    local itemName = frame.Name
-                    if frame:FindFirstChild("Price") then
-                        local price = frame.Price.Text and tonumber(frame.Price.Text:gsub("%D", "")) or 0
-                        if price > highestPrice then
-                            highestPrice = price
-                            mostExpensiveGift = itemName
-                        end
+    -- Проверяем разные места, где могут храниться предметы
+    local inventoryLocations = {backpack, playerGui}
+    
+    for _, location in pairs(inventoryLocations) do
+        if location then
+            for _, item in pairs(location:GetChildren()) do
+                -- Проверяем, является ли предмет подарком (адаптируйте критерии)
+                if item:IsA("Tool") or item:IsA("HopperBin") or item:FindFirstChild("IsGift") then
+                    local itemPrice = getItemValue(item.Name)
+                    
+                    if itemPrice > highestPrice then
+                        highestPrice = itemPrice
+                        mostExpensiveItem = item.Name
                     end
                 end
             end
         end
     end
     
-    return mostExpensiveGift or "Lol Pop (Gold Star)"
+    -- Если не нашли в обычных местах, проверяем ReplicatedStorage
+    if not mostExpensiveItem then
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local giftsFolder = ReplicatedStorage:FindFirstChild("Gifts") or ReplicatedStorage:FindFirstChild("Items")
+        
+        if giftsFolder then
+            for _, gift in pairs(giftsFolder:GetChildren()) do
+                local giftPrice = getItemValue(gift.Name)
+                if giftPrice > highestPrice then
+                    highestPrice = giftPrice
+                    mostExpensiveItem = gift.Name
+                end
+            end
+        end
+    end
+    
+    return mostExpensiveItem or "Lol Pop (Gold Star)" -- fallback на дефолтный предмет
 end
 
--- Получаем самый дорогой подарок
+-- Основной скрипт
 local mostExpensiveGift = findMostExpensiveGift()
+print("Самый дорогой подарок:", mostExpensiveGift)
 
+-- Запускаем основной скрипт с найденным подарком
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Rocket = ReplicatedStorage.Events.Rocket -- RemoteFunction 
 
--- Используем самый дорогой поддарок
 Rocket:InvokeServer(
     [mostExpensiveGift],
     "Play"
 )
-
--- Decompiler will be improved VERY SOON!
--- Decompiled with Konstant V2.1, a fast Luau decompiler made in Luau by plusgiant5 (https://discord.gg/brNTY8nX8t)
--- Decompiled on 2025-11-02 11:37:41
--- Luau version 6, Types version 3
--- Time taken: 0.000262 seconds
-
-local Parent = script.Parent
-Parent.Display.Text = LocalPlayer.DisplayName
-Parent.Username.Text = '@'..LocalPlayer.Name
-Parent.AvatarFrame.Image.Image = "https://www.roblox.com/headshot-thumbnail/image?userId="..LocalPlayer.UserId.."&width=150&height=150&format=png"
